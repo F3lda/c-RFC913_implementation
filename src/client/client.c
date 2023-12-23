@@ -209,7 +209,7 @@ int main (int argc, const char * argv[])
     struct address_info_INET64 addr_info;
     memset(&addr_info, 0, sizeof(addr_info));
     
-    // set remote ip and family
+    // get remote ip and family
     lookup_host(remote_hostname, &addr_info);
     
     // set remote port

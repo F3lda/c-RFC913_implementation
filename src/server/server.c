@@ -45,6 +45,10 @@
 #define MESSAGE_NULL_CHAR 1
 
 
+// https://stackoverflow.com/a/3437484
+#define max(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
+
+
 struct client_info {
     int socket;
     char ip_address[STATIC_STRING_SIZE];
@@ -76,16 +80,17 @@ void trim(char * str);
 
 int get_user_line(char * filename, char * user_line, int user_line_size);
 
-
 int main(int argc, char *argv[])
 {
-    // READ ARGS
-    // -------------------------
     char arg_interface[STATIC_STRING_SIZE] = {0};
     int arg_port = 0;
     char arg_pass_file_path[STATIC_STRING_SIZE] = {0};
-    
-    char usage_str[] = "usage: %s {-i <interface>} {-p <port>} -u <passwords file>\n";
+
+
+
+    // READ ARGS
+    // -------------------------
+    char usage_str[] = "usage: ./ipk-simpleftp-server {-i <interface>} {-p <port>} -u <passwords file> (<> -> mandatory arguments)\n";
     
     int arg_check_sum = 0; // for mandatory arguments only
     int i = 0;
@@ -106,68 +111,79 @@ int main(int argc, char *argv[])
                         fprintf(stderr,"ERROR - arguments: option %c - mmissing value\n%s", option, usage_str);
                         exit(EXIT_FAILURE);
                         
-                    } else if (option == 'i') {
-                        
-                        if (arg_interface[0] == '\0') {
-                            
-                            if (strlen(value1) < sizeof(arg_interface)) {
-                            
-                                memcpy(arg_interface, value1, sizeof(arg_interface));
-                            
-                            } else {
-                                
-                                fprintf(stderr,"ERROR - arguments: option %c - value is too long (max size: %d chars)\n%s", sizeof(arg_interface)-1, option, usage_str);
-                                exit(EXIT_FAILURE);
-                                
+                    } else {
+                        switch(option)
+                        {
+                            case 'i':
+                            {
+                                if (arg_interface[0] == '\0') {
+                                    
+                                    if (strlen(value1) < sizeof(arg_interface)) {
+                                    
+                                        memcpy(arg_interface, value1, sizeof(arg_interface));
+                                    
+                                    } else {
+                                        
+                                        fprintf(stderr,"ERROR - arguments: option %c - value is too long (max size: %d chars)\n%s", sizeof(arg_interface)-1, option, usage_str);
+                                        exit(EXIT_FAILURE);
+                                        
+                                    }
+                                    
+                                } else {
+                                    
+                                    fprintf(stderr,"ERROR - arguments: option %c - duplicate\n%s", option, usage_str);
+                                    exit(EXIT_FAILURE);
+                                    
+                                }
+
+                                break;
                             }
-                            
-                        } else {
-                            
-                            fprintf(stderr,"ERROR - arguments: option %c - duplicate\n%s", option, usage_str);
-                            exit(EXIT_FAILURE);
-                            
-                        }
-                        
-                    } else if (option == 'p') {
-                        
-                        if (arg_port == 0) {
-                            
-                            arg_port = atoi(value1);
-                            if (arg_port == 0) {
-                                fprintf(stderr,"ERROR - arguments: option %c - invalid value\n%s", option, usage_str);
-                                exit(EXIT_FAILURE);
+                            case 'p':
+                            {
+                                if (arg_port == 0) {
+                                    
+                                    arg_port = atoi(value1);
+                                    if (arg_port == 0) {
+                                        fprintf(stderr,"ERROR - arguments: option %c - invalid value\n%s", option, usage_str);
+                                        exit(EXIT_FAILURE);
+                                    }
+                                    
+                                } else {
+                                    
+                                    fprintf(stderr,"ERROR - arguments: option %c - duplicate\n%s", option, usage_str);
+                                    exit(EXIT_FAILURE);
+                                    
+                                }
+
+                                break;
                             }
+                            case 'u':
+                            {
+                                if (arg_pass_file_path[0] == '\0') {
                             
-                        } else {
-                            
-                            fprintf(stderr,"ERROR - arguments: option %c - duplicate\n%s", option, usage_str);
-                            exit(EXIT_FAILURE);
-                            
-                        }
-                        
-                    } else if (option == 'u') {
-                        
-                        if (arg_pass_file_path[0] == '\0') {
-                            
-                            if (strlen(value1) < sizeof(arg_pass_file_path)) {
-                            
-                                memcpy(arg_pass_file_path, value1, sizeof(arg_pass_file_path));
-                            
-                            } else {
+                                    if (strlen(value1) < sizeof(arg_pass_file_path)) {
+                                    
+                                        memcpy(arg_pass_file_path, value1, sizeof(arg_pass_file_path));
+                                    
+                                    } else {
+                                        
+                                        fprintf(stderr,"ERROR - arguments: option %c - value is too long (max size: %d chars)\n%s", sizeof(arg_pass_file_path)-1, option, usage_str);
+                                        exit(EXIT_FAILURE);
+                                        
+                                    }
+                                    
+                                } else {
+                                    
+                                    fprintf(stderr,"ERROR - arguments: option %c - duplicate\n%s", option, usage_str);
+                                    exit(EXIT_FAILURE);
+                                    
+                                }
                                 
-                                fprintf(stderr,"ERROR - arguments: option %c - value is too long (max size: %d chars)\n%s", sizeof(arg_pass_file_path)-1, option, usage_str);
-                                exit(EXIT_FAILURE);
-                                
+                                arg_check_sum++; // mandatory argument
+
+                                break;
                             }
-                            
-                        } else {
-                            
-                            fprintf(stderr,"ERROR - arguments: option %c - duplicate\n%s", option, usage_str);
-                            exit(EXIT_FAILURE);
-                            
                         }
-                        
-                        arg_check_sum++; // mandatory argument
                     }
                     break;
                 }
@@ -202,6 +218,7 @@ int main(int argc, char *argv[])
     // check interface
     char interface_ip[STATIC_STRING_SIZE] = {0};
     char interface_list[1024] = {0};
+    // selects the IP address of the first interface with name equal to the name inserted by user -> maybe TODO option '-6' -> for the first ipv6 interface ip address OR select specific IP address
     get_interfaces(arg_interface, interface_ip, STATIC_STRING_SIZE-1, interface_list, 1023);
     
     printf("%s\n", interface_list);
@@ -210,16 +227,15 @@ int main(int argc, char *argv[])
         perror("ERROR - interface ip not found");
         exit(EXIT_FAILURE);
     } else if (interface_ip[0] == '\0') {
-        strcpy(interface_ip, "::"); // = INADDR6_ANY -> eqivalent for 0.0.0.0
-        // AF_INET6 -> for both IPv4 and IPv6 (for only IPv6 -> socket option - IPV6_V6ONLY) -> https://www.ibm.com/docs/en/i/7.4?topic=sscaaiic-example-accepting-connections-from-both-ipv6-ipv4-clients
+        strcpy(interface_ip, "::"); // (in6addr_any) receive on any interface/ip address [IPv4 eqivalent: 0.0.0.0]
     }
     
-    printf("SELECTED INTERFACE IP: %s (:: = all interfaces)\n\n", interface_ip);
+    printf("SELECTED INTERFACE IP: %s (:: = receive on any interface/ip address)\n\n", interface_ip);
     printf("----------------------------\n\n");
     
     
-    
-    
+
+
     
     // CREATE SERVER
     // -------------------------
@@ -229,30 +245,34 @@ int main(int argc, char *argv[])
     struct address_info_INET64 addr_info;
     memset(&addr_info, 0, sizeof(addr_info));
     
-    // set local ip and family
-    lookup_host(interface_ip, &addr_info);
+    // get local ip address and family of local host address
+    lookup_host(interface_ip, &addr_info); // reads the first host info
     
     // set local port
     if (addr_info.family == AF_INET) {
-        
-        //printf("IPv4\n");
-        //addr_info.addr.v4.sin_family = AF_INET;
         addr_info.addr.v4.sin_port = htons(arg_port);
-        // bind socket to specific interface (selects the first interface with the name equal to the name inserted by user -> maybe TODO option '-6' -> for the first ipv6 interface)
-        //inet_pton(AF_INET, addr_info.address, (void *)&addr_info.addr.v4.sin_addr.s_addr);
-        
-    } else if (addr_info.family == AF_INET6) { // PF_INET6 -> https://stackoverflow.com/questions/6729366/what-is-the-difference-between-af-inet-and-pf-inet-in-socket-programming
-        
-        //printf("IPv6\n");
-        //addr_info.addr.v6.sin6_family = AF_INET6;
+    } else if (addr_info.family == AF_INET6) {
         addr_info.addr.v6.sin6_port = htons(arg_port);
-        // bind socket to specific interface (selects the first interface with the name equal to the name inserted by user -> maybe TODO option '-6' -> for the first ipv6 interface)
-        //inet_pton(AF_INET6, addr_info.address, (void *)&addr_info.addr.v6.sin6_addr.s6_addr);
-        //addr_info.addr.v6.sin6_scope_id = if_nametoindex(arg_interface);
-        
     }
     
-    
+
+
+/*
+    // Socket address info for both IPv4 and IPv6 and any IP address
+    struct sockaddr_in6 serveraddr_info, clientaddr_info;
+    serveraddr_info.sin6_family = AF_INET6;
+    serveraddr_info.sin6_port   = htons(SERVER_PORT);
+    serveraddr_info.sin6_addr   = in6addr_any;
+
+    // AF_INET6 -> for both IPv4 and IPv6 (for only IPv6 -> set socket option flag - IPV6_V6ONLY)
+    // Special addresses are ::1 for loopback and ::FFFF:<IPv4 address> for IPv4-mapped-on-IPv6.
+    // If the client is an IPv4 client, the address will be shown as an IPv4 Mapped IPv6 address.
+    // https://man7.org/linux/man-pages/man7/ipv6.7.html
+    // https://www.ibm.com/docs/en/i/7.4?topic=sscaaiic-example-accepting-connections-from-both-ipv6-ipv4-clients
+    // PF_* -> https://stackoverflow.com/questions/6729366/what-is-the-difference-between-af-inet-and-pf-inet-in-socket-programming
+*/
+
+
     
     // create server main socket
 	if ((welcome_socket = socket(addr_info.family, SOCK_STREAM, 0)) < 0) {
@@ -274,23 +294,26 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
     
+    // create queue for max 16 incomming connections
 	if ((listen(welcome_socket, 16)) < 0) {
 		
         perror("ERROR - listen");
 		exit(EXIT_FAILURE);
 	}
     
-    // set non-blocking socket
+    // set non-blocking socket welcome socket
 	int flags = fcntl(welcome_socket, F_GETFL, 0);
 	if (fcntl(welcome_socket, F_SETFL, flags | O_NONBLOCK) < 0) {
 		perror("ERROR - non-blocking");
 		exit(EXIT_FAILURE);
 	}
 	
-	// socket blocking timeout
+	// select blocking timeout
 	struct timeval timeoutStruct = {0, 0}; // socket blocking timeout (seconds, nanoseconds)
-	fd_set fd_welcome_socket; // socket file descriptors
-    
+	fd_set fd_set_server; // fds set
+    int fds_server_size = STDIN; // fds set size or FD_SETSIZE -> https://stackoverflow.com/questions/13271481/fd-setsize-versus-calculated-value 
+    fds_server_size = max(fds_server_size, welcome_socket);
+    fds_server_size += 1;
     
     
     
@@ -309,70 +332,73 @@ int main(int argc, char *argv[])
     struct client_info clinfo;
     memset(&clinfo, 0, sizeof(clinfo));
     
-    fd_set fds_stdin;
-    
     while(1)
 	{
         // check a new client
-        FD_ZERO(&fd_welcome_socket);
-        FD_SET(welcome_socket, &fd_welcome_socket);
-        if (select(FD_SETSIZE, &fd_welcome_socket, NULL, NULL, &timeoutStruct) == 1) {
+        FD_ZERO(&fd_set_server);
+        FD_SET(STDIN, &fd_set_server);
+        FD_SET(welcome_socket, &fd_set_server);
+        if (select(fds_server_size, &fd_set_server, NULL, NULL, &timeoutStruct) > 0) {
+
+            if (FD_ISSET(welcome_socket, &fd_set_server)) {
             
-            // accept new client
-            int new_client_socket = accept(welcome_socket, (struct sockaddr*)&sa_client, &sa_client_len);		
-             
-            if (new_client_socket >= 0) {
+                // accept new client
+                int new_client_socket = accept(welcome_socket, (struct sockaddr*)&sa_client, &sa_client_len);		
                 
-                // create info struct for the new client and process
-                memset(&clinfo, 0, sizeof(clinfo));
-                clinfo.socket = new_client_socket;
-                
-                if(inet_ntop(AF_INET6, &sa_client.sin6_addr, ip_buffer, sizeof(ip_buffer))) {
-                
-                    memcpy(clinfo.ip_address, ip_buffer, sizeof(clinfo.ip_address));
-                    clinfo.port = ntohs(sa_client.sin6_port);
-                
+                if (new_client_socket >= 0) {
+                    
+                    // create info struct for the new client and process
+                    memset(&clinfo, 0, sizeof(clinfo));
+                    clinfo.socket = new_client_socket;
+                    
+                    if(inet_ntop(AF_INET6, &sa_client.sin6_addr, ip_buffer, sizeof(ip_buffer))) { // If the client is an IPv4 client, the address will be shown as an IPv4 Mapped IPv6 address.
+                    
+                        memcpy(clinfo.ip_address, ip_buffer, sizeof(clinfo.ip_address));
+                        clinfo.port = ntohs(sa_client.sin6_port);
+                    
+                    }
+                    
+                    memcpy(clinfo.pass_file, arg_pass_file_path, sizeof(clinfo.pass_file));
+                    
+                    // create the new process for the new client
+                    ProcessCreate(client_process, &clinfo, false);
+                    
+                } else {
+                    // error
+                    printf("ERROR: accept()\n");
+                    break;
                 }
-                
-                memcpy(clinfo.pass_file, arg_pass_file_path, sizeof(clinfo.pass_file));
-                
-                // create the new process for the new client
-                ProcessCreate(client_process, &clinfo, false);
-                
-            } else {
-                // error
-                break;
+
             }
-        }
-        
-        
-        
-        // check an input on STDIN
-        FD_ZERO(&fds_stdin);
-        FD_SET(STDIN, &fds_stdin);
-        if (select(1, &fds_stdin, NULL, NULL, &timeoutStruct) > 0) {
-            
-            // read line from STDIN
-            char stdin_str[STATIC_STRING_SIZE] = {0};
-            fgets(stdin_str, sizeof(stdin_str), stdin);
-            trim(stdin_str);
-            if (strcmp(stdin_str, "DONE") == 0) {
-                
-                while(ProcessCheckIfAnyChildProcessFinished() > 0){} // read all finished processes
-                
-                // check if any clients are still connected
-                if (ProcessCheckIfAnyChildProcessFinished() == 0) {
-                    printf("SOME CLIENTS STILL CONNECTED!\nKILLING ALL PROCESSES...\n");
-                    close(welcome_socket);
-                    kill(0, SIGKILL);
+
+            if (FD_ISSET(STDIN, &fd_set_server)) {
+
+                // read line from STDIN
+                char stdin_str[STATIC_STRING_SIZE] = {0};
+                fgets(stdin_str, sizeof(stdin_str), stdin);
+                trim(stdin_str);
+                if (strcmp(stdin_str, "DONE") == 0) {
+                    
+                    // wait for finishing processes
+                    while(ProcessCheckIfAnyChildProcessFinished() > 0){} 
+                    
+                    // check if any clients are still connected
+                    if (ProcessCheckIfAnyChildProcessFinished() == 0) {
+                        printf("SOME CLIENTS STILL CONNECTED!\nKILLING ALL PROCESSES...\n");
+                        signal(SIGQUIT, SIG_IGN); // ignore SIGQUIT
+                        kill(0, SIGQUIT); // kill parent and all child processes -> parent process is not killed because SIGQUIT is ignored
+                        //close(welcome_socket);
+                        //kill(0, SIGKILL);
+                    }
+                    
+                    errno = 0;
+                    break;
                 }
-                
-                errno = 0;
-                break;
-            }
-            // write line to STDOUT
-            if (stdin_str[0] != '\0') {
-                printf("> %s\n", stdin_str);
+                // write line to STDOUT
+                if (stdin_str[0] != '\0') {
+                    printf("> %s\n", stdin_str);
+                }
+
             }
         }
         
@@ -935,8 +961,9 @@ int lookup_host(const char *host, struct address_info_INET64 *addr_info)
     int exit_code = 0;
 
     memset(&hints, 0, sizeof (hints));
-    hints.ai_family = PF_UNSPEC;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = 0; // any protocol
     hints.ai_flags |= AI_CANONNAME | AI_PASSIVE;
 
     if (getaddrinfo(host, NULL, &hints, &result) != 0) {
@@ -946,33 +973,49 @@ int lookup_host(const char *host, struct address_info_INET64 *addr_info)
 
     info = result;
 
+    addr_info->count = 0;
+    addr_info->current = 0; // select first info
+
+    printf("\nLIST OF ADDRESSES OF HOST\n");
+    printf("--------------------------\n");
+
     while(info != NULL)
     {
-        if (addr_info->current == addr_info->count) {
-        
-            char addr_buffer[INET64_ADDRSTRLEN] = {0};
-            if (info->ai_family == AF_INET) {
-                addr_info->family = info->ai_family;
-                if (inet_ntop(info->ai_family, &((struct sockaddr_in *)info->ai_addr)->sin_addr, addr_buffer, sizeof(addr_buffer)) == NULL) {
-                    exit_code = -2;
-                    break;
-                }
-                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer));
-                memcpy(&addr_info->addr.v4, info->ai_addr, info->ai_addrlen);
-                
-            } else if (info->ai_family == AF_INET6) {
-                addr_info->family = info->ai_family;
-                if (inet_ntop(info->ai_family, &((struct sockaddr_in6 *)info->ai_addr)->sin6_addr, addr_buffer, sizeof(addr_buffer)) == NULL) {
-                    exit_code = -3;
-                    break;
-                }
-                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer));
-                memcpy(&addr_info->addr.v6, info->ai_addr, info->ai_addrlen);
-                
+        char addr_buffer[INET64_ADDRSTRLEN] = {0};
+        if (info->ai_family == AF_INET) {
+            if (inet_ntop(info->ai_family, &((struct sockaddr_in *)info->ai_addr)->sin_addr, addr_buffer, sizeof(addr_buffer)) == NULL) { // address from binary to text form
+                exit_code = -2;
+                break;
             }
-            //printf("IPv%d address: %s (%s)\n", info->ai_family == PF_INET6 ? 6 : 4, addr_buffer, info->ai_canonname);
+
+            // save first info
+            if (addr_info->current == addr_info->count) {
+                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer)); // address in text form
+                memcpy(&addr_info->addr.v4, info->ai_addr, info->ai_addrlen); // info in bin form
+                addr_info->family = info->ai_family; // family
+            }
+            
+        } else if (info->ai_family == AF_INET6) {
+            if (inet_ntop(info->ai_family, &((struct sockaddr_in6 *)info->ai_addr)->sin6_addr, addr_buffer, sizeof(addr_buffer)) == NULL) { // address from binary to text form
+                exit_code = -3;
+                break;
+            }
+
+            // save first info
+            if (addr_info->current == addr_info->count) {
+                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer)); // address in text form
+                memcpy(&addr_info->addr.v6, info->ai_addr, info->ai_addrlen); // info in bin form
+                addr_info->family = info->ai_family; // family
+
+                // select ipv6 interface
+                //addr_info.addr.v6.sin6_scope_id = if_nametoindex(arg_interface);
+            }
             
         }
+
+        // host info
+        printf("IPv%d address: %s (%s)\n", info->ai_family == AF_INET6 ? 6 : 4, addr_buffer, info->ai_canonname);
+        
         addr_info->count++;
         info = info->ai_next;
     }
@@ -1014,14 +1057,17 @@ int get_interfaces(char * interface_name, char * interface_ip, int max_interface
                     break;
                 }
                 
+                // ip address
                 snprintf(interface_list+strlen(interface_list), max_list_length-strlen(interface_list), "%-8s %s \t(%d) \taddress: <%s>\n", ifa->ifa_name, (family == AF_PACKET) ? "AF_PACKET" : (family == AF_INET) ? "AF_INET" : (family == AF_INET6) ? "AF_INET6" : "???", family, host);
                 
+                // save first ip address
                 if (strcmp(ifa->ifa_name, interface_name) == 0 && interface_ip[0] == '\0') {
                     memcpy(interface_ip, host, max_interface_ip_length);
                 }
                 
             } else if (family == AF_PACKET && ifa->ifa_data != NULL) {
                 
+                // interface
                 snprintf(interface_list+strlen(interface_list), max_list_length-strlen(interface_list), "%-8s\n", ifa->ifa_name);
                 
             }
