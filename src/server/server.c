@@ -4,7 +4,7 @@
  * @brief SFTP - RFC-913 implementation
  * @date 2021-04-23
  * @author F3lda
- * @update 2021-04-24
+ * @update 2023-12-26
  */
 
 #include <stdio.h>
@@ -90,7 +90,8 @@ int main(int argc, char *argv[])
 
     // READ ARGS
     // -------------------------
-    char usage_str[] = "usage: ./ipk-simpleftp-server {-i <interface>} {-p <port>} -u <passwords file> (<> -> mandatory arguments)\n";
+    char usage_str[255] = {0};
+    snprintf(usage_str, 255, "usage: %s {-i <interface>} {-p <port>} -u <passwords file> (<> -> mandatory arguments)\n", argv[0]);
     
     int arg_check_sum = 0; // for mandatory arguments only
     int i = 0;
@@ -245,9 +246,15 @@ int main(int argc, char *argv[])
     struct address_info_INET64 addr_info;
     memset(&addr_info, 0, sizeof(addr_info));
     
-    // get local ip address and family of local host address
+    // get ip address and family of local host address
     lookup_host(interface_ip, &addr_info); // reads the first host info
     
+    // check if local host address found
+    if (addr_info.count == 0) {
+        perror("ERROR - local host ip address not found");
+        exit(EXIT_FAILURE);
+    }
+
     // set local port
     if (addr_info.family == AF_INET) {
         addr_info.addr.v4.sin_port = htons(arg_port);
@@ -309,9 +316,9 @@ int main(int argc, char *argv[])
 	}
 	
 	// select blocking timeout
-	struct timeval timeoutStruct = {0, 0}; // socket blocking timeout (seconds, nanoseconds)
-	fd_set fd_set_server; // fds set
-    int fds_server_size = STDIN; // fds set size or FD_SETSIZE -> https://stackoverflow.com/questions/13271481/fd-setsize-versus-calculated-value 
+	struct timeval timeoutStruct = {0, 0}; // select blocking timeout (seconds, nanoseconds)
+	fd_set fd_read_set_server; // select file descriptors set
+    int fds_server_size = STDIN; // fds set size or FD_SETSIZE -> https://stackoverflow.com/questions/13271481/fd-setsize-versus-calculated-value
     fds_server_size = max(fds_server_size, welcome_socket);
     fds_server_size += 1;
     
@@ -335,12 +342,13 @@ int main(int argc, char *argv[])
     while(1)
 	{
         // check a new client
-        FD_ZERO(&fd_set_server);
-        FD_SET(STDIN, &fd_set_server);
-        FD_SET(welcome_socket, &fd_set_server);
-        if (select(fds_server_size, &fd_set_server, NULL, NULL, &timeoutStruct) > 0) {
+        FD_ZERO(&fd_read_set_server);
+        FD_SET(STDIN, &fd_read_set_server);
+        FD_SET(welcome_socket, &fd_read_set_server);
+        if (select(fds_server_size, &fd_read_set_server, NULL, NULL, &timeoutStruct) > 0) { // for new projects use poll() function
 
-            if (FD_ISSET(welcome_socket, &fd_set_server)) {
+            // new client
+            if (FD_ISSET(welcome_socket, &fd_read_set_server)) {
             
                 // accept new client
                 int new_client_socket = accept(welcome_socket, (struct sockaddr*)&sa_client, &sa_client_len);		
@@ -371,7 +379,11 @@ int main(int argc, char *argv[])
 
             }
 
-            if (FD_ISSET(STDIN, &fd_set_server)) {
+
+
+            // STRING from stdin
+            // info: https://stackoverflow.com/questions/448944/c-non-blocking-keyboard-input
+            if (FD_ISSET(STDIN, &fd_read_set_server)) {
 
                 // read line from STDIN
                 char stdin_str[STATIC_STRING_SIZE] = {0};
@@ -817,7 +829,7 @@ int client_process(pid_t processID, void *userData)
                         FILE *file;
                         if ((file = fopen(filename, "r")) != NULL) { // file exists?
                             fclose(file);
-                            printf("FILE eXISTS\n");
+                            printf("FILE EXISTS\n");
                             struct stat sb;
                             if (stat(filename, &sb) != -1) { // get file size
                                 

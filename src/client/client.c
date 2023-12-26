@@ -4,7 +4,7 @@
  * @brief SFTP - RFC-913 implementation
  * @date 2021-04-23
  * @author F3lda
- * @update 2021-04-24
+ * @update 2023-12-26
  */
 
 
@@ -42,6 +42,10 @@
 #define SOCKET_BLOCK_TIMEOUT 5
 
 
+// https://stackoverflow.com/a/3437484
+#define max(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
+
+
 int LOGGED_IN = 0;
 char LAST_CMD[5] = {0};
 char FILE_NAME_DOWNLOAD[STATIC_STRING_SIZE] = {0};
@@ -72,8 +76,9 @@ int lookup_host(const char *host, struct address_info_INET64 *addr_info)
     int exit_code = 0;
 
     memset(&hints, 0, sizeof (hints));
-    hints.ai_family = PF_UNSPEC;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = 0; // any protocol
     hints.ai_flags |= AI_CANONNAME | AI_PASSIVE;
 
     if (getaddrinfo(host, NULL, &hints, &result) != 0) {
@@ -83,33 +88,49 @@ int lookup_host(const char *host, struct address_info_INET64 *addr_info)
 
     info = result;
 
+    addr_info->count = 0;
+    addr_info->current = 0; // select first info
+
+    printf("\nLIST OF ADDRESSES OF HOST\n");
+    printf("--------------------------\n");
+
     while(info != NULL)
     {
-        if (addr_info->current == addr_info->count) {
-        
-            char addr_buffer[INET64_ADDRSTRLEN] = {0};
-            if (info->ai_family == AF_INET) {
-                addr_info->family = info->ai_family;
-                if (inet_ntop(info->ai_family, &((struct sockaddr_in *)info->ai_addr)->sin_addr, addr_buffer, sizeof(addr_buffer)) == NULL) {
-                    exit_code = -2;
-                    break;
-                }
-                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer));
-                memcpy(&addr_info->addr.v4, info->ai_addr, info->ai_addrlen);
-                
-            } else if (info->ai_family == AF_INET6) {
-                addr_info->family = info->ai_family;
-                if (inet_ntop(info->ai_family, &((struct sockaddr_in6 *)info->ai_addr)->sin6_addr, addr_buffer, sizeof(addr_buffer)) == NULL) {
-                    exit_code = -3;
-                    break;
-                }
-                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer));
-                memcpy(&addr_info->addr.v6, info->ai_addr, info->ai_addrlen);
-                
+        char addr_buffer[INET64_ADDRSTRLEN] = {0};
+        if (info->ai_family == AF_INET) {
+            if (inet_ntop(info->ai_family, &((struct sockaddr_in *)info->ai_addr)->sin_addr, addr_buffer, sizeof(addr_buffer)) == NULL) { // address from binary to text form
+                exit_code = -2;
+                break;
             }
-            //printf("IPv%d address: %s (%s)\n", info->ai_family == PF_INET6 ? 6 : 4, addr_buffer, info->ai_canonname);
+
+            // save first info
+            if (addr_info->current == addr_info->count) {
+                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer)); // address in text form
+                memcpy(&addr_info->addr.v4, info->ai_addr, info->ai_addrlen); // info in bin form
+                addr_info->family = info->ai_family; // family
+            }
+            
+        } else if (info->ai_family == AF_INET6) {
+            if (inet_ntop(info->ai_family, &((struct sockaddr_in6 *)info->ai_addr)->sin6_addr, addr_buffer, sizeof(addr_buffer)) == NULL) { // address from binary to text form
+                exit_code = -3;
+                break;
+            }
+
+            // save first info
+            if (addr_info->current == addr_info->count) {
+                memcpy(addr_info->address, addr_buffer, sizeof(addr_buffer)); // address in text form
+                memcpy(&addr_info->addr.v6, info->ai_addr, info->ai_addrlen); // info in bin form
+                addr_info->family = info->ai_family; // family
+
+                // select ipv6 interface
+                //addr_info.addr.v6.sin6_scope_id = if_nametoindex(arg_interface);
+            }
             
         }
+
+        // host info
+        printf("IPv%d address: %s (%s)\n", info->ai_family == AF_INET6 ? 6 : 4, addr_buffer, info->ai_canonname);
+        
         addr_info->count++;
         info = info->ai_next;
     }
@@ -135,12 +156,13 @@ int main (int argc, const char * argv[])
 {
     // READ ARGS
     // -------------------------
+    char usage_str[] = "-h <hostname> {-p <port>} (<> -> mandatory arguments)\n";
     char remote_hostname[STATIC_STRING_SIZE] = {0};
     int remote_port = 115; // default port
     
     // check args count
 	if (argc != 5 && argc != 3) {
-		fprintf(stderr, "usage: %s -h <hostname> {-p <port>}\n", argv[0]);
+		fprintf(stderr, "usage: %s %s\n", argv[0], usage_str);
 		exit(EXIT_FAILURE);
 	}
     
@@ -149,12 +171,12 @@ int main (int argc, const char * argv[])
         
         // check arg type
         if (strcmp(argv[1], "-h") != 0) {
-            fprintf(stderr, "usage: %s -h <hostname> {-p <port>}\n", argv[0]);
+            fprintf(stderr, "usage: %s %s\n", argv[0], usage_str);
             exit(EXIT_FAILURE);
         }
-        // check string max size
+        // check string max length
         if(strlen(argv[2]) >= STATIC_STRING_SIZE){
-            fprintf(stderr, "ERROR: some args are too big (max size: %d)\n", STATIC_STRING_SIZE-1);
+            fprintf(stderr, "ERROR: some args are too big (max length: %d)\n", STATIC_STRING_SIZE-1);
             exit(EXIT_FAILURE);
         }
         // get args
@@ -165,9 +187,9 @@ int main (int argc, const char * argv[])
         // check arg type
         if (strcmp(argv[1], "-h") == 0 && strcmp(argv[3], "-p") == 0) {
             
-            // check string max size
+            // check string max length
             if(strlen(argv[2]) >= STATIC_STRING_SIZE){
-                fprintf(stderr, "ERROR: some args are too big (max size: %d)\n", STATIC_STRING_SIZE-1);
+                fprintf(stderr, "ERROR: some args are too big (max length: %d)\n", STATIC_STRING_SIZE-1);
                 exit(EXIT_FAILURE);
             }
             // get args
@@ -176,9 +198,9 @@ int main (int argc, const char * argv[])
             
         } else if (strcmp(argv[1], "-p") == 0 && strcmp(argv[3], "-h") == 0) {
             
-            // check string max size
+            // check string max length
             if(strlen(argv[4]) >= STATIC_STRING_SIZE){
-                fprintf(stderr, "ERROR: some args are too big (max size: %d)\n", STATIC_STRING_SIZE-1);
+                fprintf(stderr, "ERROR: some args are too big (max length: %d)\n", STATIC_STRING_SIZE-1);
                 exit(EXIT_FAILURE);
             }
             // get args
@@ -186,7 +208,7 @@ int main (int argc, const char * argv[])
             remote_port = atoi(argv[2]);
             
         } else {
-            fprintf(stderr, "usage: %s -h <hostname> {-p <port>}\n", argv[0]);
+            fprintf(stderr, "usage: %s %s\n", argv[0], usage_str);
             exit(EXIT_FAILURE);
         }
     }
@@ -209,20 +231,20 @@ int main (int argc, const char * argv[])
     struct address_info_INET64 addr_info;
     memset(&addr_info, 0, sizeof(addr_info));
     
-    // get remote ip and family
-    lookup_host(remote_hostname, &addr_info);
+    // get ip address and family of remote host address
+    lookup_host(remote_hostname, &addr_info); // reads the first host info
     
+    // check if remote host address found
+    if (addr_info.count == 0) {
+        perror("ERROR - remote host ip address not found");
+        exit(EXIT_FAILURE);
+    }
+
     // set remote port
-    if (addr_info.family == AF_INET){
-        
-        //printf("IPv4\n");
+    if (addr_info.family == AF_INET) {
         addr_info.addr.v4.sin_port = htons(remote_port);
-        
-    } else if (addr_info.family == AF_INET6){
-        
-        //printf("IPv6\n");
+    } else if (addr_info.family == AF_INET6) {
         addr_info.addr.v6.sin6_port = htons(remote_port);
-        
     }
     
     
@@ -246,10 +268,13 @@ int main (int argc, const char * argv[])
 		exit(EXIT_FAILURE);
 	}
 	
-	// socket blocking timeout
-	struct timeval timeoutStruct = {0*SOCKET_BLOCK_TIMEOUT, 0}; // socket blocking timeout (seconds, nanoseconds)
-	fd_set readable_socket, writable_socket; // socket file descriptors
-	
+	// select blocking timeout
+	struct timeval timeoutStruct = {0*SOCKET_BLOCK_TIMEOUT, 0}; // select blocking timeout (seconds, nanoseconds)
+	fd_set fd_read_set_client; // select file descriptors set
+	fd_set fd_write_set_client; // select file descriptors set
+    int fds_client_size = STDIN; // fds set size or FD_SETSIZE -> https://stackoverflow.com/questions/13271481/fd-setsize-versus-calculated-value
+    fds_client_size = max(fds_client_size, client_socket);
+    fds_client_size += 1;
     
     
     
@@ -266,109 +291,130 @@ int main (int argc, const char * argv[])
     int receiving = 0;
     int sending = 0;
     
-    // check if stdin is readable
-    struct timeval tv_stdin = {0L, 0L};
-    fd_set fds_stdin;
     char init_request[STATIC_STRING_SIZE] = {0};
-    
+
     int wait_for_response = 1; // set 0 or 1 (for reading commands from file)
     int waiting_for_response = 0;
     
     int done = 0;
 	while(done == 0)
     {
-		FD_ZERO(&readable_socket);
-		FD_ZERO(&writable_socket);
-		FD_SET(client_socket, &readable_socket);
-		FD_SET(client_socket, &writable_socket);
+		FD_ZERO(&fd_read_set_client);
+		FD_ZERO(&fd_write_set_client);
+        FD_SET(STDIN, &fd_read_set_client);
+		FD_SET(client_socket, &fd_read_set_client);
+		FD_SET(client_socket, &fd_write_set_client);
 		
 		// check file descriptors
-		select(FD_SETSIZE, &readable_socket, &writable_socket, NULL, &timeoutStruct);
+		if (select(fds_client_size, &fd_read_set_client, &fd_write_set_client, NULL, &timeoutStruct) > 0) { // for new projects use poll() function
 		
-        
-        
-		// ready to READ
-		if (FD_ISSET(client_socket, &readable_socket)) {
-			
-            // check pending response in buffer
-            //if ((receiving == 0 || bytesReceived == response_size) && bytesReceived == 0) {
+            // ready to READ
+            if (FD_ISSET(client_socket, &fd_read_set_client)) {
                 
-                int bytesLength = recv(client_socket, &response[bytesReceived], response_size-bytesReceived, 0);
-                if (bytesLength > 0) {
+                // check pending response in buffer
+                //if ((receiving == 0 || bytesReceived == response_size) && bytesReceived == 0) {
                     
-                    // bytes received OK
-                    bytesReceived += bytesLength;
-                    // receiving started or continues
-                    receiving = 1;
-                    
-                } else if (bytesLength == 0) {
-                    
-                    // receiving finished
-                    receiving = 0;
-                    
-                    // proper shutdown - "end-of-file" received
-                    // or full buffer
-                    if(bytesReceived == response_size){
-                        // RESPONSE BUFFER IS FULL
-                        //printf("DONE - RESPONSE BUFFER IS FULL\n");
-                        // continue reading after buffer is clear/read
+                    int bytesLength = recv(client_socket, &response[bytesReceived], response_size-bytesReceived, 0);
+                    if (bytesLength > 0) {
+                        
+                        // bytes received OK
+                        bytesReceived += bytesLength;
+                        // receiving started or continues
                         receiving = 1;
                         
-                    } else {
-                        // END OF FILE -> SERVER DOWN
-                        perror("ERROR - SERVER DOWN");
+                    } else if (bytesLength == 0) {
+                        
+                        // receiving finished
+                        receiving = 0;
+                        
+                        // proper shutdown - "end-of-file" received
+                        // or full buffer
+                        if(bytesReceived == response_size){
+                            // RESPONSE BUFFER IS FULL
+                            //printf("DONE - RESPONSE BUFFER IS FULL\n");
+                            // continue reading after buffer is clear/read
+                            receiving = 1;
+                            
+                        } else {
+                            // END OF FILE -> SERVER DOWN
+                            perror("ERROR - SERVER DOWN");
+                            close(client_socket);
+                            return -4;
+                        }
+                        
+                    } else if (bytesLength < 0) {
+                        
+                        // other errors
+                        perror("ERROR - recv");
                         close(client_socket);
                         return -4;
+                        
                     }
                     
-                } else if (bytesLength < 0) {
-                    
-                    // other errors
-                    perror("ERROR - recv");
-                    close(client_socket);
-                    return -4;
-                    
-                }
+                //}
                 
-            //}
-            
-		} else if (bytesReceived != 0 && errno != EAGAIN) {
-			// reading done OK
-			//printf("DONE - NOTHING TO READ\n");
-            receiving = 0;
-		}
-        
-        
-        
-		// ready to WRITE
-		if (FD_ISSET(client_socket, &writable_socket)) {
-			
-            if (bytesSent != strlen(request)+MESSAGE_NULL_CHAR && request[0] != '\0') {
-				
-                int bytesLength = send(client_socket, &request[bytesSent], strlen(request)+MESSAGE_NULL_CHAR-bytesSent, 0);
-				if (bytesLength > 0) {
-					
-                    // bytes sent OK
-					bytesSent += bytesLength;
-                    // sending started or continues
-                    sending = 1;
-                    
-				} else if (bytesLength < 0) {
-					perror("ERROR - send");
-					// close client socket
-					close(client_socket);
-					return -5;
-				} else {
-                    // errors
-                    //printf("NOTHING TO SEND!\n");
-                }
-				
-			} else if (sending == 1) {
-                
-                // sending done
-                sending = 0;
+            } else if (bytesReceived != 0 && errno != EAGAIN) {
+                // reading done OK
+                //printf("DONE - NOTHING TO READ\n");
+                receiving = 0;
             }
-		}
+            
+            
+            
+            // ready to WRITE
+            if (FD_ISSET(client_socket, &fd_write_set_client)) {
+                
+                if (bytesSent != strlen(request)+MESSAGE_NULL_CHAR && request[0] != '\0') {
+                    
+                    int bytesLength = send(client_socket, &request[bytesSent], strlen(request)+MESSAGE_NULL_CHAR-bytesSent, 0);
+                    if (bytesLength > 0) {
+                        
+                        // bytes sent OK
+                        bytesSent += bytesLength;
+                        // sending started or continues
+                        sending = 1;
+                        
+                    } else if (bytesLength < 0) {
+                        perror("ERROR - send");
+                        // close client socket
+                        close(client_socket);
+                        return -5;
+                    } else {
+                        // errors
+                        //printf("NOTHING TO SEND!\n");
+                    }
+                    
+                } else if (sending == 1) {
+                    
+                    // sending done
+                    sending = 0;
+                }
+            }
+
+
+
+            // STRING from stdin (if init_request is empty)
+            // info: https://stackoverflow.com/questions/448944/c-non-blocking-keyboard-input
+            if (FD_ISSET(STDIN, &fd_read_set_client) && init_request[0] == '\0') {
+                if (waiting_for_response == 0) {
+                    
+                    // read and trim line from STDIN
+                    char stdin_str[STATIC_STRING_SIZE] = {0};
+                    fgets(stdin_str, sizeof(stdin_str), stdin);
+                    trim(stdin_str);
+                    
+                    // skip empty lines
+                    if (stdin_str[0] != '\0') {
+                    
+                        // wait for response
+                        waiting_for_response = wait_for_response;
+                    
+                        // handle input
+                        handleUserInput(stdin_str, init_request, sizeof(request), &waiting_for_response);
+                    }
+                }
+            }
+        }
 		
         
         
@@ -389,34 +435,7 @@ int main (int argc, const char * argv[])
         }
         
         
-        
-        // STRING from stdin (if init_request is empty)
-        // info: https://stackoverflow.com/questions/448944/c-non-blocking-keyboard-input
-        FD_ZERO(&fds_stdin);
-        FD_SET(STDIN, &fds_stdin);
-        if (select(1, &fds_stdin, NULL, NULL, &tv_stdin) > 0 && init_request[0] == '\0') {
-            
-            if (waiting_for_response == 0) {
-                
-                // read and trim line from STDIN
-                char stdin_str[STATIC_STRING_SIZE] = {0};
-                fgets(stdin_str, sizeof(stdin_str), stdin);
-                trim(stdin_str);
-                
-                // skip empty lines
-                if (stdin_str[0] != '\0') {
-                
-                    // wait for response
-                    waiting_for_response = wait_for_response;
-                
-                    // handle input
-                    handleUserInput(stdin_str, init_request, sizeof(request), &waiting_for_response);
-                }
-            }
-        }
-        
-        
-        
+
         // send prepared request
         if (sending == 0 && init_request[0] != '\0') {
             
@@ -430,6 +449,7 @@ int main (int argc, const char * argv[])
         }
         
         
+
 		// short delay
 		usleep(1000000/30);
 	}

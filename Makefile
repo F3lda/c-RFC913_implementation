@@ -23,7 +23,7 @@ build_objects:
 run:
 	@./$(EXEC)
 
-clean: clean_build
+clean: clean2 clean_build
 	@-rm -rf $(EXEC) || true
 
 clean_build:
