@@ -66,7 +66,7 @@ struct address_info_INET64 {
 };
 
 
-int handleServerResponse(char * response, int bytes_received, char * request, int request_size);
+int handleServerResponse(char * response, int bytes_received, char * request, int request_size, int *downloading_file);
 
 int handleUserInput(char * input, char * request, int request_size, int * waiting_for_response);
 
@@ -295,6 +295,7 @@ int main (int argc, const char * argv[])
 
     int wait_for_response = 1; // set 0 or 1 (for reading commands from file)
     int waiting_for_response = 0;
+    int downloading_file = 0;
     
     int done = 0;
 	while(done == 0)
@@ -396,7 +397,7 @@ int main (int argc, const char * argv[])
             // STRING from stdin (if init_request is empty)
             // info: https://stackoverflow.com/questions/448944/c-non-blocking-keyboard-input
             if (FD_ISSET(STDIN, &fd_read_set_client) && init_request[0] == '\0') {
-                if (waiting_for_response == 0) {
+                if (waiting_for_response == 0 && downloading_file == 0) {
                     
                     // read and trim line from STDIN
                     char stdin_str[STATIC_STRING_SIZE] = {0};
@@ -422,7 +423,7 @@ int main (int argc, const char * argv[])
         if ((receiving == 0 || bytesReceived == response_size) && bytesReceived != 0 && init_request[0] == '\0') {
             
             // handle response
-            done = handleServerResponse(response, bytesReceived, init_request, sizeof(request));
+            done = handleServerResponse(response, bytesReceived, init_request, sizeof(request), &downloading_file);
             
             // clear response buffer
             bytesReceived = 0;
@@ -465,7 +466,7 @@ int main (int argc, const char * argv[])
 }
 
 
-int handleServerResponse(char * response, int bytes_received, char * request, int request_size)
+int handleServerResponse(char * response, int bytes_received, char * request, int request_size, int *downloading_file)
 {
     //printf("RESPONSE: <%s>(%d)\n", response, bytes_received);
     //printf("LASTCMD: <%s>\n", LAST_CMD);
@@ -522,6 +523,7 @@ int handleServerResponse(char * response, int bytes_received, char * request, in
             printf("------------------------------>>>");
             snprintf(request, request_size, "SEND"); // DOWNLOAD file
             strncpy(LAST_CMD, "SEND", 4);// save current CMD
+            *downloading_file = 1;
         }
         
         
@@ -535,6 +537,7 @@ int handleServerResponse(char * response, int bytes_received, char * request, in
             printf("<<<------------------------------\n");
             printf("END OF FILE\n");
             printf("DOWNLOAD COMPLETE\n");
+            *downloading_file = 0;
         }
         
         

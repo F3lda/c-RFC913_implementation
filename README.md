@@ -13,6 +13,8 @@ The client is very simple and tries to approximate the `Simple FTP` protocol. Co
 The file download is done via standard output and it is up to the user to save the data. The user can redirect the standard output to the file during the download and remove the extra lines from the file. (This implementation is chosen to keep the client as simple as possible.) 
 However, the client can also be served using ``scripts``, or files containing `RFC 913` line-separated commands. This file can then just be redirected to the standard application input and its contents will be executed.
 
+Script example: `./ipk-simpleftp-client -p 65001 -h 147.229.176.19 <sftp_download_cmds.txt >downloaded_file.txt`
+
 ## Server
 From the user's point of view, the server application is very simple. After startup, messages describing what is happening on the server are printed to the console, and at the same time it is possible to enter only a single `DONE` command via the standard input, confirmed by the `enter` key, which terminates the server and disconnects all clients.
 
@@ -24,6 +26,8 @@ From the user's point of view, the server application is very simple. After star
 > (if no specific interface is specified, all available interfaces are used)
 >
 > example: ./ipk-simpleftp-server -u ./users.txt -p 65001
+>
+> example: ./ipk-simpleftp-server -u ./users.txt -i eth2 -p 65001
 
 When a new client is connected, a process is created to serve that client.
 

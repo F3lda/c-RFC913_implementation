@@ -1,0 +1,43 @@
+
+LIST OF ADDRESSES OF HOST
+--------------------------
+IPv4 address: 147.229.176.19 (147.229.176.19)
++IPK-SFTP-SERVER SFTP Service
+! Logged in
+------------------------------
+FILE DOWNLOAD
+BYTES TO DOWNLOAD: 560
+FILE NAME:  ./src/libs/processes.h
+START OF FILE
+------------------------------>>>/**
+ * @file processes.h
+ * 
+ * @brief Functions for working with processes
+ * @date 2020-05-06
+ * @author F3lda
+ */
+#ifndef PROCESSES_FORK_H_
+#define PROCESSES_FORK_H_
+
+#include <stdbool.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+
+int ProcessCreate(int (processFunction)(pid_t, void*), void *userData, bool waitForChild);
+
+void ProcessWaitForAllChildProcesses();
+
+int ProcessWaitForChildProcess(int processID);
+
+int ProcessCheckIfAnyChildProcessFinished();
+
+#endif
+<<<------------------------------
+END OF FILE
+DOWNLOAD COMPLETE
+CLIENT DONE.
